@@ -1,6 +1,10 @@
 import os
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import LabelBinarizer
+from sklearn.metrics import roc_curve, auc, roc_auc_score
+from sklearn.model_selection import train_test_split
 
 def model():
 
@@ -88,7 +92,7 @@ def model():
 
     for i in parameters:
         model = NN_Builder(i[0], i[1])
-        history = model.fit(X, y_cat, epochs=100, batch_size=16000, verbose=0, validation_split=0.2, callbacks=[es])
+        history = model.fit(X, y_cat, epochs=50, batch_size=16000, verbose=0, validation_split=0.2, callbacks=[es])
         models[f"{i[0]} (hidden) layers,{i[1]} neurons in the first layer"] = model
         parameters_list[f"{i[0]} (hidden) layers,{i[1]} neurons in the first layer"] = i
         result[f"{i[0]} (hidden) layers,{i[1]} neurons in the first layer"] = history.history['val_accuracy'][-1]
@@ -111,13 +115,40 @@ def model():
     y = to_categorical(y, num_classes)
 
     for train, test in kfold.split(X, np.zeros(y.shape[0])):
-        model = NN_Builder(parameters_list[bestresult][0], parameters_list[bestresult][1])
+        model = bestmodel#NN_Builder(parameters_list[bestresult][0], parameters_list[bestresult][1])
 
-        model.fit(X[train], y[train], epochs=100, batch_size=16000, verbose=0)
+        model.fit(X[train], y[train], epochs=50, batch_size=16000, verbose=0)
+
 
         scores = model.evaluate(X[test], y[test], verbose=0)
         cvscores.append(scores[1] * 100)
 
     print(f"Accuracy with the best model is equal to: {np.mean(cvscores)} with std {np.std(cvscores)}")
+
+    y_pred = bestmodel.predict(X)
+    y_pred = [np.argmax(i) for i in y_pred]
+
+    target = ["HBOND", "IONIC", "PICATION", "PIPISTACK", "SSBOND", "VDW"]
+
+
+    # set plot figure size
+    fig, c_ax = plt.subplots(1, 1, figsize=(12, 8))
+    lb = LabelBinarizer()
+    lb.fit(y)
+    y_test = lb.transform(y)
+    y_pred = lb.transform(y_pred)
+
+    for (idx, c_label) in enumerate(target):
+        fpr, tpr, thresholds = roc_curve(y[:, idx].astype(int), y_pred[:, idx])
+        c_ax.plot(fpr, tpr, label='%s (AUC:%0.2f)' % (c_label, auc(fpr, tpr)))
+    c_ax.plot(fpr, fpr, 'b-', label='Random Guessing')
+
+    print('ROC AUC score:', roc_auc_score(y, y_pred, average="macro"))
+
+    c_ax.legend()
+    c_ax.set_xlabel('False Positive Rate')
+    c_ax.set_ylabel('True Positive Rate')
+    plt.show()
+
 
     return bestmodel
