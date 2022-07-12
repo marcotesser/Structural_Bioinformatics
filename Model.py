@@ -26,14 +26,14 @@ def model():
     y
 
     # Extract training features
-    X = df[['s_rsa', 's_up', 's_down', 's_phi', 's_psi', 's_a1', 's_a2', 's_a3', 's_a4', 's_a5',
-            't_rsa', 't_up', 't_down', 't_phi', 't_psi', 't_a1', 't_a2', 't_a3', 't_a4', 't_a5']]
+    X = df[['s_up', 's_down', 's_phi', 's_psi', 's_a1', 's_a2', 's_a3', 's_a4', 's_a5',
+            't_up', 't_down', 't_phi', 't_psi', 't_a1', 't_a2', 't_a3', 't_a4', 't_a5']]
 
     # Fill missing values with the most common value for that feature
-    X = X.fillna({'s_rsa': X.s_rsa.mode()[0], 's_up': X.s_up.mode()[0], 's_down': X.s_down.mode()[0],
+    X = X.fillna({'s_up': X.s_up.mode()[0], 's_down': X.s_down.mode()[0],
                   's_phi': X.s_phi.mode()[0], 's_psi': X.s_psi.mode()[0], 's_a1': X.s_a1.mode()[0],
                   's_a2': X.s_a2.mode()[0], 's_a3': X.s_a3.mode()[0], 's_a4': X.s_a4.mode()[0],
-                  's_a5': X.s_a5.mode()[0], 't_rsa': X.t_rsa.mode()[0], 't_up': X.t_up.mode()[0],
+                  's_a5': X.s_a5.mode()[0], 't_up': X.t_up.mode()[0],
                   't_down': X.t_down.mode()[0], 't_phi': X.t_phi.mode()[0], 't_psi': X.t_psi.mode()[0],
                   't_a1': X.t_a1.mode()[0], 't_a2': X.t_a2.mode()[0], 't_a3': X.t_a3.mode()[0],
                   't_a4': X.t_a4.mode()[0], 't_a5': X.t_a5.mode()[0]})
@@ -92,7 +92,7 @@ def model():
 
     for i in parameters:
         model = NN_Builder(i[0], i[1])
-        history = model.fit(X, y_cat, epochs=50, batch_size=16000, verbose=0, validation_split=0.2, callbacks=[es])
+        history = model.fit(X, y_cat, epochs=500, batch_size=16000, verbose=0, validation_split=0.2, callbacks=[es])
         models[f"{i[0]} (hidden) layers,{i[1]} neurons in the first layer"] = model
         parameters_list[f"{i[0]} (hidden) layers,{i[1]} neurons in the first layer"] = i
         result[f"{i[0]} (hidden) layers,{i[1]} neurons in the first layer"] = history.history['val_accuracy'][-1]
@@ -117,7 +117,7 @@ def model():
     for train, test in kfold.split(X, np.zeros(y.shape[0])):
         model = bestmodel#NN_Builder(parameters_list[bestresult][0], parameters_list[bestresult][1])
 
-        model.fit(X[train], y[train], epochs=50, batch_size=16000, verbose=0)
+        model.fit(X[train], y[train], epochs=500, batch_size=16000, verbose=0)
 
 
         scores = model.evaluate(X[test], y[test], verbose=0)

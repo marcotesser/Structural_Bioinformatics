@@ -78,11 +78,11 @@ if __name__ == '__main__':
         raise ValueError("no valid residues")
 
     # Calculate DSSP
-    dssp = {}
-    try:
-        dssp = dict(DSSP(structure[0], args.pdb_file, dssp=config["dssp_file"]))
-    except Exception:
-        logging.warning("{} DSSP error".format(pdb_id))
+    #dssp = {}
+    #try:
+    #    dssp = dict(DSSP(structure[0], args.pdb_file, dssp=config["dssp_file"]))
+    #except Exception:
+    #    logging.warning("{} DSSP error".format(pdb_id))
 
     # Calculate Half Sphere Exposure
     hse = {}
@@ -125,14 +125,12 @@ if __name__ == '__main__':
                     chain_1,
                     *residue_1.id[1:],
                     aa_1,
-                    *dssp.get((chain_1, residue_1.id), [None, None, None, None])[2:4],
                     *hse.get((chain_1, residue_1.id), [None, None])[:2],
                     *rama_dict.get((chain_1, residue_1.id), [None, None, None]),
                     *atchley_scale[aa_1],
                     chain_2,
                     *residue_2.id[1:],
                     aa_2,
-                    *dssp.get((chain_2, residue_2.id), [None, None, None, None])[2:4],
                     *hse.get((chain_2, residue_2.id), [None, None])[:2],
                     *rama_dict.get((chain_2, residue_2.id), [None, None, None]),
                     *atchley_scale[aa_2]))
@@ -143,7 +141,7 @@ if __name__ == '__main__':
 
     # Create a DataFrame and save to file
     df = pd.DataFrame(data, columns=['pdb_id',
-                                     's_ch', 's_resi', 's_ins', 's_resn', 's_ss8', 's_rsa', 's_up', 's_down', 's_phi', 's_psi', 's_ss3', 's_a1', 's_a2', 's_a3', 's_a4', 's_a5',
-                                     't_ch', 't_resi', 't_ins', 't_resn', 't_ss8', 't_rsa', 't_up', 't_down', 't_phi', 't_psi', 't_ss3', 't_a1', 't_a2', 't_a3', 't_a4', 't_a5']).round(3)
+                                     's_ch', 's_resi', 's_ins', 's_resn', 's_up', 's_down', 's_phi', 's_psi', 's_ss3', 's_a1', 's_a2', 's_a3', 's_a4', 's_a5',
+                                     't_ch', 't_resi', 't_ins', 't_resn', 't_up', 't_down', 't_phi', 't_psi', 't_ss3', 't_a1', 't_a2', 't_a3', 't_a4', 't_a5']).round(3)
     df.to_csv("{}/{}.tsv".format(args.out_dir, pdb_id), sep="\t", index=False)
 
