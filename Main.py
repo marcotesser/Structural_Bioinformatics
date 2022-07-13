@@ -6,7 +6,7 @@ from Model import model
 
 if __name__ == '__main__':
 
-    model = model()
+    model, sfm = model()
 
     pdb_id = input("Enter your protein: ")
 
@@ -36,6 +36,8 @@ if __name__ == '__main__':
 
     X = np.array(X)
 
+    X = sfm.transform(X)
+
     y_pred = model.predict(X)
     y_pred = [np.round(i, 3) for i in y_pred]
 
@@ -45,4 +47,5 @@ if __name__ == '__main__':
         columns={0: "HBOND", 1: "IONIC", 2: "PICATION", 3: "PIPISTACK", 4: "SSBOND", 5: "VDW"})
     data_final = pd.concat([X, y_pred], axis=1)
     print(data_final)
+    data_final.to_csv(f"{pdb_id} predictions.csv")
 

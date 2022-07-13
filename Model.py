@@ -60,9 +60,8 @@ def model():
 
 
     X_train, X_test, y_train, y_test = train_test_split(X, y,
-                                                        test_size=0.2,
-                                                        random_state=123,
-                                                        stratify=y)
+                                                        test_size=0.1,
+                                                        random_state=123)
 
     from sklearn.feature_selection import SelectFromModel
     from sklearn.linear_model import LogisticRegression
@@ -74,8 +73,8 @@ def model():
     labels = set(y)
     features = X_train.shape[1]
     num_classes = len(labels)
-    y_cat = to_categorical(y_train, num_classes)
-    y_test = to_categorical(y_test, num_classes)
+    y_train_cat = to_categorical(y_train, num_classes)
+    y_test_cat = to_categorical(y_test, num_classes)
 
     def NN_Builder(n_layers=0, neurons=0):
         np.random.seed(123)
@@ -102,8 +101,8 @@ def model():
                        min_delta=0.0001
                        )
 
-    layers = [2, 3]
-    neurons = [90, 60, 30]
+    layers = [3]
+    neurons = [90]#, 60, 30]
     hyperparameter_score_list = {}
 
     print("Determining the best model...")
@@ -113,21 +112,68 @@ def model():
         for n in neurons:
 
             estimator = KerasRegressor(build_fn=NN_Builder, n_layers=l, neurons=n, epochs=500, batch_size=16000, callbacks=[es])
-            results = cross_val_score(estimator, X_train, y_cat,scoring="accuracy", cv=10)
-            hyperparameter_score_list[(n, l)] = results.mean()
+            results = np.array(cross_val_score(estimator, X_train, y_train_cat, cv=5))
+            print(results)
+            print(results.shape)
+            hyperparameter_score_list[(l, n)] = np.mean(results)
 
     result = list(hyperparameter_score_list.items())
     result.sort(key=lambda item: item[1], reverse=True)
     bestresult = result[0][0]
     print(f"The best parameter configuration for Neural Network is: {bestresult[0]} layers and {bestresult[1]} neurons")
     bestmodel = NN_Builder(bestresult[0], bestresult[1])
-    bestmodel.fit(X_train, y_cat, epochs=500, batch_size=16000, callbacks=[es])
-    result = bestmodel.evaluate(X_test, y_test)
+    history = bestmodel.fit(X_train, y_train_cat, epochs=500, batch_size=16000, callbacks=[es])
+    result = bestmodel.evaluate(X_test, y_test_cat)
     print(f"best accuracy with best model is equal to {result[1]}")
-    y_pred = bestmodel.predict(X_test)
-    y_pred = [np.argmax(i) for i in y_pred]
+
+    from collections import Counter
+    y_pred_init = bestmodel.predict(X_test)
+    y_pred = [np.argmax(i) for i in y_pred_init]
+    print(Counter(y_pred))
+
     target = ["HBOND", "IONIC", "PICATION", "PIPISTACK", "SSBOND", "VDW"]
 
+
+
+    from sklearn.metrics import precision_score
+    from sklearn.metrics import recall_score
+
+    td = {0: "HBOND", 1: "IONIC", 2: "PICATION", 3: "PIPISTACK", 4: "SSBOND", 5: "VDW"}
+    y_test = [td.get(item) for item in y_test]
+    y_pred = [td.get(item) for item in y_pred]
+    precision = precision_score(y_test, y_pred, average=None)
+    precision = [i*100 for i in precision]
+    recall = recall_score(y_test, y_pred, average=None)
+    recall = [i * 100 for i in recall]
+
+    '''
+    dprec = {}
+    dreca = {}
+    supportprec = zip(target, precision)
+    supportreca = zip(target, recall)
+    for i in supportprec:
+        dprec[i[0]] = i[1]
+    for i in supportreca:
+        dreca[i[0]] = i[1]
+    print(dprec)
+    print(dreca)
+    '''
+
+    import matplotlib.pyplot as plt
+
+    X_axis = np.arange(len(target))
+
+    plt.bar(X_axis - 0.2, precision, 0.4, label='Precision')
+    plt.bar(X_axis + 0.2, recall, 0.4, label='Recall')
+
+    plt.xticks(X_axis, target)
+    plt.xlabel("Classes")
+    plt.ylabel("Performance")
+    plt.title("Precision-Recall graph")
+    plt.legend()
+    plt.show()
+
+    '''
     # set plot figure size
     fig, c_ax = plt.subplots(1, 1, figsize=(12, 8))
     lb = LabelBinarizer()
@@ -146,6 +192,6 @@ def model():
     c_ax.set_xlabel('False Positive Rate')
     c_ax.set_ylabel('True Positive Rate')
     plt.show()
+    '''
 
-
-    return bestmodel
+    return bestmodel, sfm
