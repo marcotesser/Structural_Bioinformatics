@@ -3,9 +3,11 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from keras.initializers.initializers_v2 import GlorotNormal, RandomNormal
+from keras.wrappers.scikit_learn import KerasRegressor
 from sklearn.preprocessing import LabelBinarizer
 from sklearn.metrics import roc_curve, auc, roc_auc_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, cross_validate, cross_val_score
+
 
 def model():
 
@@ -42,8 +44,11 @@ def model():
     # Calculate percentiles and tranform into categories
     X = X.rank(pct=True).round(1)
 
+
+
     import tensorflow
     import math
+    from sklearn.model_selection import train_test_split
     from tensorflow.keras.models import Sequential
     from tensorflow.keras.layers import Input, Dense
     from tensorflow.keras.utils import to_categorical
@@ -52,31 +57,37 @@ def model():
     from tensorflow.keras import initializers
     import keras_tuner as kt
 
+
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y,
+                                                        test_size=0.2,
+                                                        random_state=123,
+                                                        stratify=y)
+
+    from sklearn.feature_selection import SelectFromModel
+    from sklearn.linear_model import LogisticRegression
+    sfm = SelectFromModel(LogisticRegression())
+    sfm.fit(X, y)
+    X_train = sfm.transform(X_train)
+    X_test = sfm.transform(X_test)
+
     labels = set(y)
-
-    features = X.shape[1]
+    features = X_train.shape[1]
     num_classes = len(labels)
+    y_cat = to_categorical(y_train, num_classes)
+    y_test = to_categorical(y_test, num_classes)
 
-    y_cat = to_categorical(y, num_classes)
-
-
-    def NN_Builder(n_layers, neurons, weight_initializer, decreasing):
+    def NN_Builder(n_layers=0, neurons=0):
         np.random.seed(123)
         set_random_seed(2)
-
-        decreasing_index = 0
-
-        if decreasing:
-            decreasing_index = math.floor(neurons / (n_layers - 1))
 
         model = Sequential()
         model.add(Input(features))
 
         for i in range(n_layers):
-            model.add(Dense(units=neurons - decreasing_index * i, activation='relu',
-                            kernel_initializer=weight_initializer))
+            model.add(Dense(units=neurons, activation='relu', kernel_initializer="glorot_normal"))
 
-        model.add(Dense(units=num_classes, activation='softmax', kernel_initializer=weight_initializer))
+        model.add(Dense(units=num_classes, activation='softmax', kernel_initializer="glorot_normal"))
 
         model.compile(loss='categorical_crossentropy',
                       optimizer='adam',
@@ -85,68 +96,37 @@ def model():
         return model
 
 
-    es = EarlyStopping(monitor='val_loss',
+    es = EarlyStopping(monitor='loss',
                        mode='min',
                        patience=5,
                        min_delta=0.0001
                        )
 
-    layers = [3, 4, 5]
-    neurons = [90,70,50,30]
-    decreasing = [True, False]
-    batch_sizes = [16000, 32000]
-    weight_initializers = ["random_normal", "glorot_normal"]
-    result = {}
-    models = {}
-    parameters_list = {}
+    layers = [2, 3]
+    neurons = [90, 60, 30]
+    hyperparameter_score_list = {}
 
     print("Determining the best model...")
 
 
     for l in layers:
         for n in neurons:
-            for d in decreasing:
-                for b in batch_sizes:
-                    for w in weight_initializers:
-                        model = NN_Builder(l,n,w,d)
-                        history = model.fit(X, y_cat, epochs=500, batch_size=b, validation_split=0.1, callbacks=[es])
-                        models[f"layer = {l},neurons = {n},decreasing = {d},batch_size = {b},weight_initializer = {w}"] = model
-                        #parameters_list[f"layer = {l},neurons = {n},batch_size = {b},weight_initializer = {w}"] =
-                        result[f"layer = {l},neurons = {n},decreasing = {d},batch_size = {b},weight_initializer = {w}"] = history.history['val_accuracy'][-1]
-    result = list(result.items())
+
+            estimator = KerasRegressor(build_fn=NN_Builder, n_layers=l, neurons=n, epochs=500, batch_size=16000, callbacks=[es])
+            results = cross_val_score(estimator, X_train, y_cat,scoring="accuracy", cv=10)
+            hyperparameter_score_list[(n, l)] = results.mean()
+
+    result = list(hyperparameter_score_list.items())
     result.sort(key=lambda item: item[1], reverse=True)
     bestresult = result[0][0]
-    print(f"The best parameter configuration for Neural Network is: {bestresult}")
-    models[bestresult].summary()
-
-    print("Performing 10-Fold Cross-Validation...")
-
-    bestmodel = models[bestresult]
-    from sklearn.model_selection import StratifiedKFold
-
-    kfold = StratifiedKFold(n_splits=2)
-    cvscores = []
-
-    X = np.array(X)
-    y = np.array(y)
-    y = to_categorical(y, num_classes)
-
-    for train, test in kfold.split(X, np.zeros(y.shape[0])):
-
-        model = bestmodel#NN_Builder(parameters_list[bestresult][0], parameters_list[bestresult][1])
-
-        model.fit(X[train], y[train], epochs=500, batch_size=16000, verbose=0)
-
-        scores = model.evaluate(X[test], y[test], verbose=0)
-        cvscores.append(scores[1] * 100)
-
-    print(f"Accuracy with the best model is equal to: {np.mean(cvscores)} with std {np.std(cvscores)}")
-
-    y_pred = bestmodel.predict(X)
+    print(f"The best parameter configuration for Neural Network is: {bestresult[0]} layers and {bestresult[1]} neurons")
+    bestmodel = NN_Builder(bestresult[0], bestresult[1])
+    bestmodel.fit(X_train, y_cat, epochs=500, batch_size=16000, callbacks=[es])
+    result = bestmodel.evaluate(X_test, y_test)
+    print(f"best accuracy with best model is equal to {result[1]}")
+    y_pred = bestmodel.predict(X_test)
     y_pred = [np.argmax(i) for i in y_pred]
-
     target = ["HBOND", "IONIC", "PICATION", "PIPISTACK", "SSBOND", "VDW"]
-
 
     # set plot figure size
     fig, c_ax = plt.subplots(1, 1, figsize=(12, 8))
