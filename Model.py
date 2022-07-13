@@ -2,6 +2,7 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from keras.initializers.initializers_v2 import GlorotNormal, RandomNormal
 from sklearn.preprocessing import LabelBinarizer
 from sklearn.metrics import roc_curve, auc, roc_auc_score
 from sklearn.model_selection import train_test_split
@@ -42,11 +43,14 @@ def model():
     X = X.rank(pct=True).round(1)
 
     import tensorflow
+    import math
     from tensorflow.keras.models import Sequential
     from tensorflow.keras.layers import Input, Dense
     from tensorflow.keras.utils import to_categorical
     from tensorflow.python.framework.random_seed import set_random_seed
     from keras.callbacks import EarlyStopping
+    from tensorflow.keras import initializers
+    import keras_tuner as kt
 
     labels = set(y)
 
@@ -56,17 +60,23 @@ def model():
     y_cat = to_categorical(y, num_classes)
 
 
-    def NN_Builder(n_layers, neurons):
+    def NN_Builder(n_layers, neurons, weight_initializer, decreasing):
         np.random.seed(123)
         set_random_seed(2)
+
+        decreasing_index = 0
+
+        if decreasing:
+            decreasing_index = math.floor(neurons / (n_layers - 1))
 
         model = Sequential()
         model.add(Input(features))
 
-        for index, i in enumerate(range(n_layers)):
-            model.add(Dense(units=neurons - 5 * index, activation='relu'))
+        for i in range(n_layers):
+            model.add(Dense(units=neurons - decreasing_index * i, activation='relu',
+                            kernel_initializer=weight_initializer))
 
-        model.add(Dense(units=num_classes, activation='softmax'))
+        model.add(Dense(units=num_classes, activation='softmax', kernel_initializer=weight_initializer))
 
         model.compile(loss='categorical_crossentropy',
                       optimizer='adam',
@@ -81,21 +91,28 @@ def model():
                        min_delta=0.0001
                        )
 
-    layers = [1, 2]
-    neurons = [13, 15]
-    parameters = zip(layers, neurons)
+    layers = [3, 4, 5]
+    neurons = [90,70,50,30]
+    decreasing = [True, False]
+    batch_sizes = [16000, 32000]
+    weight_initializers = ["random_normal", "glorot_normal"]
     result = {}
     models = {}
     parameters_list = {}
 
     print("Determining the best model...")
 
-    for i in parameters:
-        model = NN_Builder(i[0], i[1])
-        history = model.fit(X, y_cat, epochs=500, batch_size=16000, verbose=0, validation_split=0.2, callbacks=[es])
-        models[f"{i[0]} (hidden) layers,{i[1]} neurons in the first layer"] = model
-        parameters_list[f"{i[0]} (hidden) layers,{i[1]} neurons in the first layer"] = i
-        result[f"{i[0]} (hidden) layers,{i[1]} neurons in the first layer"] = history.history['val_accuracy'][-1]
+
+    for l in layers:
+        for n in neurons:
+            for d in decreasing:
+                for b in batch_sizes:
+                    for w in weight_initializers:
+                        model = NN_Builder(l,n,w,d)
+                        history = model.fit(X, y_cat, epochs=500, batch_size=b, validation_split=0.1, callbacks=[es])
+                        models[f"layer = {l},neurons = {n},decreasing = {d},batch_size = {b},weight_initializer = {w}"] = model
+                        #parameters_list[f"layer = {l},neurons = {n},batch_size = {b},weight_initializer = {w}"] =
+                        result[f"layer = {l},neurons = {n},decreasing = {d},batch_size = {b},weight_initializer = {w}"] = history.history['val_accuracy'][-1]
     result = list(result.items())
     result.sort(key=lambda item: item[1], reverse=True)
     bestresult = result[0][0]
@@ -115,10 +132,10 @@ def model():
     y = to_categorical(y, num_classes)
 
     for train, test in kfold.split(X, np.zeros(y.shape[0])):
+
         model = bestmodel#NN_Builder(parameters_list[bestresult][0], parameters_list[bestresult][1])
 
         model.fit(X[train], y[train], epochs=500, batch_size=16000, verbose=0)
-
 
         scores = model.evaluate(X[test], y[test], verbose=0)
         cvscores.append(scores[1] * 100)
