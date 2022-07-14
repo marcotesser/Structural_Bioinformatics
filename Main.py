@@ -6,7 +6,7 @@ from Model import model
 
 if __name__ == '__main__':
 
-    model, sfm = model()
+    model, sfm, scaler = model()
 
     pdb_id = input("Enter your protein: ")
 
@@ -32,20 +32,32 @@ if __name__ == '__main__':
                   't_a1': X.t_a1.mode()[0], 't_a2': X.t_a2.mode()[0], 't_a3': X.t_a3.mode()[0],
                   't_a4': X.t_a4.mode()[0], 't_a5': X.t_a5.mode()[0]})
 
-    X = X.rank(pct=True).round(1)
-
-    X = np.array(X)
-
     X = sfm.transform(X)
+
+    X = scaler.transform(X)
 
     y_pred = model.predict(X)
     y_pred = [np.round(i, 3) for i in y_pred]
 
     X = pd.DataFrame(X)
     y_pred = pd.DataFrame(y_pred)
+
+    print(y_pred)
+
     y_pred = y_pred.rename(
         columns={0: "HBOND", 1: "IONIC", 2: "PICATION", 3: "PIPISTACK", 4: "SSBOND", 5: "VDW"})
+
+    support = sfm.get_support()
+    features = ['s_up', 's_down', 's_phi', 's_psi', 's_a1', 's_a2', 's_a3', 's_a4', 's_a5',
+                't_up', 't_down', 't_phi', 't_psi', 't_a1', 't_a2', 't_a3', 't_a4', 't_a5']
+
+    features = [features[i] for i in range(len(features)) if support[i] == True]
+
     data_final = pd.concat([X, y_pred], axis=1)
+
+    data_final = data_final.rename(
+        columns={0: features[0], 1: features[1], 2: features[2], 3: features[3], 4: features[4], 5: features[5]})
+
     print(data_final)
     data_final.to_csv(f"{pdb_id} predictions.csv")
 

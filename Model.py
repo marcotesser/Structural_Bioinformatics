@@ -2,12 +2,22 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 from keras.initializers.initializers_v2 import GlorotNormal, RandomNormal
+from keras.optimizers import Adam
 from keras.wrappers.scikit_learn import KerasRegressor
 from sklearn.preprocessing import LabelBinarizer
 from sklearn.metrics import roc_curve, auc, roc_auc_score
 from sklearn.model_selection import train_test_split, cross_validate, cross_val_score
-
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Input, Dense
+from tensorflow.keras.utils import to_categorical
+from tensorflow.python.framework.random_seed import set_random_seed
+from keras.callbacks import EarlyStopping
+from sklearn.feature_selection import SelectFromModel
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import MinMaxScaler
 
 def model():
 
@@ -26,7 +36,6 @@ def model():
 
     # Extract target feature
     y = df['Interaction']
-    y
 
     # Extract training features
     X = df[['s_up', 's_down', 's_phi', 's_psi', 's_a1', 's_a2', 's_a3', 's_a4', 's_a5',
@@ -41,34 +50,20 @@ def model():
                   't_a1': X.t_a1.mode()[0], 't_a2': X.t_a2.mode()[0], 't_a3': X.t_a3.mode()[0],
                   't_a4': X.t_a4.mode()[0], 't_a5': X.t_a5.mode()[0]})
 
-    # Calculate percentiles and tranform into categories
-    X = X.rank(pct=True).round(1)
-
-
-
-    import tensorflow
-    import math
-    from sklearn.model_selection import train_test_split
-    from tensorflow.keras.models import Sequential
-    from tensorflow.keras.layers import Input, Dense
-    from tensorflow.keras.utils import to_categorical
-    from tensorflow.python.framework.random_seed import set_random_seed
-    from keras.callbacks import EarlyStopping
-    from tensorflow.keras import initializers
-    import keras_tuner as kt
-
-
 
     X_train, X_test, y_train, y_test = train_test_split(X, y,
                                                         test_size=0.1,
                                                         random_state=123)
 
-    from sklearn.feature_selection import SelectFromModel
-    from sklearn.linear_model import LogisticRegression
     sfm = SelectFromModel(LogisticRegression())
     sfm.fit(X, y)
     X_train = sfm.transform(X_train)
     X_test = sfm.transform(X_test)
+
+    scaler = MinMaxScaler()
+    scaler.fit(X_train)
+    X_train = scaler.transform(X_train)
+    X_test = scaler.transform(X_test)
 
     labels = set(y)
     features = X_train.shape[1]
@@ -76,7 +71,7 @@ def model():
     y_train_cat = to_categorical(y_train, num_classes)
     y_test_cat = to_categorical(y_test, num_classes)
 
-    def NN_Builder(n_layers=0, neurons=0):
+    def NN_Builder(n_layers=0, neurons=0,learning_rate = 0):
         np.random.seed(123)
         set_random_seed(2)
 
@@ -89,7 +84,7 @@ def model():
         model.add(Dense(units=num_classes, activation='softmax', kernel_initializer="glorot_normal"))
 
         model.compile(loss='categorical_crossentropy',
-                      optimizer='adam',
+                      optimizer=Adam(learning_rate= learning_rate),
                       metrics=['accuracy'])
 
         return model
@@ -110,26 +105,26 @@ def model():
 
     for l in layers:
         for n in neurons:
-
             estimator = KerasRegressor(build_fn=NN_Builder, n_layers=l, neurons=n, epochs=500, batch_size=16000, callbacks=[es])
-            results = np.array(cross_val_score(estimator, X_train, y_train_cat, cv=5))
-            print(results)
-            print(results.shape)
+            results = np.array(cross_val_score(estimator, X_train, y_train_cat, cv=2))
             hyperparameter_score_list[(l, n)] = np.mean(results)
 
     result = list(hyperparameter_score_list.items())
     result.sort(key=lambda item: item[1], reverse=True)
     bestresult = result[0][0]
-    print(f"The best parameter configuration for Neural Network is: {bestresult[0]} layers and {bestresult[1]} neurons")
+    print(f"The best parameter configuration for Neural Network is: {bestresult[0]} layers, {bestresult[1]}")
     bestmodel = NN_Builder(bestresult[0], bestresult[1])
-    history = bestmodel.fit(X_train, y_train_cat, epochs=500, batch_size=16000, callbacks=[es])
+    bestmodel.fit(X_train, y_train_cat, epochs=500, batch_size=16000, callbacks=[es])
     result = bestmodel.evaluate(X_test, y_test_cat)
     print(f"best accuracy with best model is equal to {result[1]}")
 
     from collections import Counter
     y_pred_init = bestmodel.predict(X_test)
     y_pred = [np.argmax(i) for i in y_pred_init]
-    print(Counter(y_pred))
+    print(f"Testing performance (size = {X_test.shape[0]}) = {Counter(y_pred)}")
+    y_pred_train_init = bestmodel.predict(X_test)
+    y_pred_train = [np.argmax(i) for i in y_pred_train_init]
+    print(f"Training performance (size = {X_train.shape[0]}) = {Counter(y_pred_train)}")
 
     target = ["HBOND", "IONIC", "PICATION", "PIPISTACK", "SSBOND", "VDW"]
 
@@ -145,21 +140,6 @@ def model():
     precision = [i*100 for i in precision]
     recall = recall_score(y_test, y_pred, average=None)
     recall = [i * 100 for i in recall]
-
-    '''
-    dprec = {}
-    dreca = {}
-    supportprec = zip(target, precision)
-    supportreca = zip(target, recall)
-    for i in supportprec:
-        dprec[i[0]] = i[1]
-    for i in supportreca:
-        dreca[i[0]] = i[1]
-    print(dprec)
-    print(dreca)
-    '''
-
-    import matplotlib.pyplot as plt
 
     X_axis = np.arange(len(target))
 
@@ -194,4 +174,4 @@ def model():
     plt.show()
     '''
 
-    return bestmodel, sfm
+    return bestmodel, sfm, scaler
