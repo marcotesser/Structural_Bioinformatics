@@ -2,22 +2,22 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.pyplot as plt
-from keras.initializers.initializers_v2 import GlorotNormal, RandomNormal
-from keras.optimizers import Adam
 from keras.wrappers.scikit_learn import KerasRegressor
 from sklearn.preprocessing import LabelBinarizer
 from sklearn.metrics import roc_curve, auc, roc_auc_score
-from sklearn.model_selection import train_test_split, cross_validate, cross_val_score
+from sklearn.model_selection import train_test_split, cross_validate, cross_val_score, KFold
 from sklearn.model_selection import train_test_split
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Input, Dense
-from tensorflow.keras.utils import to_categorical
+from keras.models import Sequential
+from keras.layers import Input, Dense
+from keras.utils import to_categorical
 from tensorflow.python.framework.random_seed import set_random_seed
 from keras.callbacks import EarlyStopping
 from sklearn.feature_selection import SelectFromModel
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import precision_score
+from sklearn.metrics import recall_score
+
 
 def model():
 
@@ -51,27 +51,20 @@ def model():
                   't_a4': X.t_a4.mode()[0], 't_a5': X.t_a5.mode()[0]})
 
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y,
-                                                        test_size=0.1,
-                                                        random_state=123)
-
     sfm = SelectFromModel(LogisticRegression())
     sfm.fit(X, y)
-    X_train = sfm.transform(X_train)
-    X_test = sfm.transform(X_test)
+    X = sfm.transform(X)
 
     scaler = MinMaxScaler()
-    scaler.fit(X_train)
-    X_train = scaler.transform(X_train)
-    X_test = scaler.transform(X_test)
+    scaler.fit(X)
+    X = scaler.transform(X)
 
     labels = set(y)
-    features = X_train.shape[1]
     num_classes = len(labels)
-    y_train_cat = to_categorical(y_train, num_classes)
-    y_test_cat = to_categorical(y_test, num_classes)
+    features = X.shape[1]
+    y_cat = to_categorical(y, num_classes)
 
-    def NN_Builder(n_layers=0, neurons=0,learning_rate = 0):
+    def NN_Builder(n_layers=0, neurons=0):
         np.random.seed(123)
         set_random_seed(2)
 
@@ -84,62 +77,99 @@ def model():
         model.add(Dense(units=num_classes, activation='softmax', kernel_initializer="glorot_normal"))
 
         model.compile(loss='categorical_crossentropy',
-                      optimizer=Adam(learning_rate= learning_rate),
+                      optimizer='adam',
                       metrics=['accuracy'])
 
         return model
 
 
-    es = EarlyStopping(monitor='loss',
+    es = EarlyStopping(monitor='val_loss',
                        mode='min',
                        patience=5,
                        min_delta=0.0001
                        )
 
-    layers = [3]
-    neurons = [90]#, 60, 30]
+    layers = [4]
+    neurons = [200]#, 60, 30]
     hyperparameter_score_list = {}
+    histories = {}
 
     print("Determining the best model...")
 
 
     for l in layers:
         for n in neurons:
-            estimator = KerasRegressor(build_fn=NN_Builder, n_layers=l, neurons=n, epochs=500, batch_size=16000, callbacks=[es])
-            results = np.array(cross_val_score(estimator, X_train, y_train_cat, cv=2))
-            hyperparameter_score_list[(l, n)] = np.mean(results)
+            estimator = NN_Builder(l, n)
+            history = estimator.fit(X, y_cat, epochs=500, batch_size=16000, validation_split=0.1, callbacks=[es])
+            histories[(l, n)] = history
+            #results = np.array(cross_val_score(estimator, X_train, y_train_cat, cv=2))
+            hyperparameter_score_list[(l, n)] = history.history['val_accuracy'][-1]#np.mean(results)
 
     result = list(hyperparameter_score_list.items())
     result.sort(key=lambda item: item[1], reverse=True)
     bestresult = result[0][0]
-    print(f"The best parameter configuration for Neural Network is: {bestresult[0]} layers, {bestresult[1]}")
-    bestmodel = NN_Builder(bestresult[0], bestresult[1])
-    bestmodel.fit(X_train, y_train_cat, epochs=500, batch_size=16000, callbacks=[es])
-    result = bestmodel.evaluate(X_test, y_test_cat)
-    print(f"best accuracy with best model is equal to {result[1]}")
+    print(f"The best parameter configuration for Neural Network is: {bestresult[0]} (hidden) layers, {bestresult[1]} neurons")
 
-    from collections import Counter
-    y_pred_init = bestmodel.predict(X_test)
-    y_pred = [np.argmax(i) for i in y_pred_init]
-    print(f"Testing performance (size = {X_test.shape[0]}) = {Counter(y_pred)}")
-    y_pred_train_init = bestmodel.predict(X_test)
-    y_pred_train = [np.argmax(i) for i in y_pred_train_init]
-    print(f"Training performance (size = {X_train.shape[0]}) = {Counter(y_pred_train)}")
+    '''
+    fig, (ax1, ax2) = plt.subplots(2, 1)
+    fig.set_size_inches(8, 8)
+    ax1.plot(histories[bestresult].history['accuracy'])
+    ax1.plot(histories[bestresult].history['val_accuracy'])
+    ax1.set_title('model accuracy')
+    ax1.set_ylabel('accuracy')
+    ax1.set_xlabel('epoch')
+    ax1.legend(['train', 'val'])
+    ax2.plot(histories[bestresult].history['loss'])
+    ax2.plot(histories[bestresult].history['val_loss'])
+    ax2.set_title('model loss')
+    ax2.set_ylabel('loss')
+    ax2.set_xlabel('epoch')
+    ax2.legend(['train', 'val'])
+    plt.tight_layout()
+    plt.show()
+    '''
+
+    es = EarlyStopping(monitor='loss',
+                       mode='min',
+                       patience=5,
+                       min_delta=0.0001
+                       )
+    performance = []
+    kf = KFold(n_splits = 2)
+    for train_index, test_index in kf.split(X):
+        X_train, X_test = X[train_index], X[test_index]
+        y_cat_train, y_cat_test = y_cat[train_index], y_cat[test_index]
+        bestmodel = NN_Builder(bestresult[0], bestresult[1])
+        bestmodel.fit(X_train, y_cat_train, epochs=500, batch_size=16000, callbacks=[es])
+        performance.append(bestmodel.evaluate(X_test, y_cat_test))
+
+    print(f"performance length = {len(performance)}")
+    bestresult = np.mean(performance)
+    print(f"the best score isssss = {bestresult}")
+
+    #bestmodel = NN_Builder(bestresult[0], bestresult[1])
+    #bestmodel.fit(X_train, y_train_cat, epochs=500, batch_size=16000, callbacks=[es])
+    #performance = bestmodel.evaluate(X_test, y_test_cat)
+    #print(f"best accuracy with best model is equal to {performance[1]}")
+
+    #from collections import Counter
+    #y_pred_init = bestmodel.predict(X_test)
+    #y_pred = [np.argmax(i) for i in y_pred_init]
+    #print(f"Testing performance (size = {X_test.shape[0]}) = {Counter(y_pred)}")
+    #y_pred_train_init = bestmodel.predict(X_test)
+    #y_pred_train = [np.argmax(i) for i in y_pred_train_init]
+    #print(f"Training performance (size = {X_train.shape[0]}) = {Counter(y_pred_train)}")
+
+    '''
+    td = {0: "HBOND", 1: "IONIC", 2: "PICATION", 3: "PIPISTACK", 4: "SSBOND", 5: "VDW"}
+    y_test_1 = [td.get(item) for item in y_test]
+    y_pred_1 = [td.get(item) for item in y_pred]
+    precision = precision_score(y_test_1, y_pred_1, average=None)
+    precision = [i*100 for i in precision]
+    recall = recall_score(y_test_1, y_pred_1, average=None)
+    recall = [i * 100 for i in recall]
 
     target = ["HBOND", "IONIC", "PICATION", "PIPISTACK", "SSBOND", "VDW"]
-
-
-
-    from sklearn.metrics import precision_score
-    from sklearn.metrics import recall_score
-
-    td = {0: "HBOND", 1: "IONIC", 2: "PICATION", 3: "PIPISTACK", 4: "SSBOND", 5: "VDW"}
-    y_test = [td.get(item) for item in y_test]
-    y_pred = [td.get(item) for item in y_pred]
-    precision = precision_score(y_test, y_pred, average=None)
-    precision = [i*100 for i in precision]
-    recall = recall_score(y_test, y_pred, average=None)
-    recall = [i * 100 for i in recall]
 
     X_axis = np.arange(len(target))
 
@@ -152,21 +182,22 @@ def model():
     plt.title("Precision-Recall graph")
     plt.legend()
     plt.show()
-
+    '''
     '''
     # set plot figure size
     fig, c_ax = plt.subplots(1, 1, figsize=(12, 8))
     lb = LabelBinarizer()
     lb.fit(y)
-    y_test = lb.transform(y)
+    y_test = lb.transform(y_test)
     y_pred = lb.transform(y_pred)
 
     for (idx, c_label) in enumerate(target):
-        fpr, tpr, thresholds = roc_curve(y[:, idx].astype(int), y_pred[:, idx])
+        fpr, tpr, thresholds = roc_curve(y_test[:, idx].astype(int),
+                                         y_pred[:, idx])
         c_ax.plot(fpr, tpr, label='%s (AUC:%0.2f)' % (c_label, auc(fpr, tpr)))
     c_ax.plot(fpr, fpr, 'b-', label='Random Guessing')
 
-    print('ROC AUC score:', roc_auc_score(y, y_pred, average="macro"))
+    print('ROC AUC score:', roc_auc_score(y_test, y_pred, average="macro"))
 
     c_ax.legend()
     c_ax.set_xlabel('False Positive Rate')

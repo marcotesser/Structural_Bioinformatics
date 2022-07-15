@@ -42,8 +42,6 @@ if __name__ == '__main__':
     X = pd.DataFrame(X)
     y_pred = pd.DataFrame(y_pred)
 
-    print(y_pred)
-
     y_pred = y_pred.rename(
         columns={0: "HBOND", 1: "IONIC", 2: "PICATION", 3: "PIPISTACK", 4: "SSBOND", 5: "VDW"})
 
@@ -58,6 +56,5 @@ if __name__ == '__main__':
     data_final = data_final.rename(
         columns={0: features[0], 1: features[1], 2: features[2], 3: features[3], 4: features[4], 5: features[5]})
 
-    print(data_final)
     data_final.to_csv(f"{pdb_id} predictions.csv")
 
