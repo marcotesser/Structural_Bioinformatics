@@ -1,3 +1,5 @@
+from collections import Counter
+
 import numpy as np
 import pandas as pd
 import os
@@ -53,8 +55,10 @@ if __name__ == '__main__':
 
     data_final = pd.concat([X, y_pred], axis=1)
 
-    data_final = data_final.rename(
-        columns={0: features[0], 1: features[1], 2: features[2], 3: features[3], 4: features[4], 5: features[5]})
+    length = len(features)
+    for i in range(length):
+        data_final = data_final.rename(columns={i: features[i]})
+
 
     data_final.to_csv(f"{pdb_id} predictions.csv")
 
